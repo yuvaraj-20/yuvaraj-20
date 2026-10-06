@@ -1,0 +1,93 @@
+name: Update Profile Animations
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 2 * * *'
+  push:
+    paths:
+      - 'profile-animation-setup/**'
+      - '.github/workflows/profile-city.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: profile-animations
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: profile-animation-setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install animation tools
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Fetch actual contributions
+        env:
+          GH_TOKEN: ${{ secrets.PROFILE_TOKEN || github.token }}
+        run: python scripts/build_pixel_city.py --username yuvaraj-20
+
+      - name: Generate both animated GIFs
+        run: node scripts/render_profile_gifs.cjs
+
+      - name: Update profile images
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          root = Path("..")
+          assets = root / "assets"
+          assets.mkdir(exist_ok=True)
+
+          for name in ("craftele-comic.gif", "pixel-city.gif"):
+              shutil.copy2(Path("assets") / name, assets / name)
+
+          readme = root / "README.md"
+          if not readme.exists():
+              shutil.copy2("README.md", readme)
+
+          text = readme.read_text()
+          text = text.replace(
+              "assets/craftele-comic.svg",
+              "assets/craftele-comic.gif"
+          ).replace(
+              "assets/pixel-city.svg",
+              "assets/pixel-city.gif"
+          )
+          readme.write_text(text)
+          PY
+
+      - name: Save generated animations
+        working-directory: .
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/craftele-comic.gif assets/pixel-city.gif README.md
+          if git diff --cached --quiet; then
+            echo 'No changes to save.'
+          else
+            git commit -m 'Update animated profile'
+            git push
+          fi
