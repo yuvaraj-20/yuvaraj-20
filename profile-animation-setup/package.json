@@ -1,0 +1,6 @@
+{
+  "name": "yuva-profile-animations",
+  "private": true,
+  "version": "2.0.0",
+  "dependencies": {"playwright": "1.62.1"}
+}
